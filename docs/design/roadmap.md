@@ -416,7 +416,7 @@ everything after it.
 
 ## Open items still tracked (from handoff / requirements §7)
 
-- `message_protocol.md` retired-header warning — one-line doc task, not scheduled
+- `RETIRED-message_protocol.md` retired-header warning — one-line doc task, not scheduled
   here (housekeeping).
 - 500 kbit/s step-up + middle-node 120R desolder — stretch goal after the bus is
   proven stable at 125k (checklist 2.5 / 3.5).

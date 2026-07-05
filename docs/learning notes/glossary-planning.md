@@ -68,7 +68,7 @@ failures before choosing a fix, so you remove the problem instead of moving it.
 **Disposition table** — a migration artifact that assigns every inherited item from
 a retired design a *disposition* — retire, re-host, re-architect, or retain (the
 "6 R's" family from cloud migration) — so nothing is silently dropped or carried
-over unexamined. (In protocol-spec §7, each `message_protocol.md` type is
+over unexamined. (In protocol-spec §7, each `RETIRED-message_protocol.md` type is
 dispositioned: survives / re-expressed / drops.)
 
 **Traceability matrix** — a row-per-item mapping showing where each element of an old

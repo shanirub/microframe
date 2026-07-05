@@ -4,7 +4,7 @@
 > system-design §8 is resolved. Scope = the CAN *message contract*: framing,
 > identity, field encoding, message types. Hardware/topology lives in
 > system-design §3 + BOM; architecture rationale in ADR-0001; carried-over
-> message semantics in message_protocol.md.
+> message semantics in RETIRED-message_protocol.md.
 >
 > Last updated: 2026-06-28.
 
@@ -38,7 +38,7 @@ want any expanded.
 
 ### Context
 A CAN 2.0 *classical* data frame carries at most **8 data bytes**; the
-carried-over messages are ~65–110 bytes (message_protocol.md §"Message Size
+carried-over messages are ~65–110 bytes (RETIRED-message_protocol.md §"Message Size
 Reference"). A transport layer that **segments** a message across multiple frames
 and **reassembles** it on the far side is therefore required.
 `[gloss: "transport" = the layer that turns 8-byte frames back into whole
@@ -182,7 +182,7 @@ Constraints already locked by earlier decisions:
   there is **no MCU↔MCU path**. The Pi is the central complex emulating the
   channel subsystem `[gloss: the mainframe's dedicated I/O machinery between the
   processor and its peripheral control units; peripherals talk to the channel, not
-  to each other]`; all traffic is MCU↔Pi. The legacy `message_protocol.md` hops
+  to each other]`; all traffic is MCU↔Pi. The legacy `RETIRED-message_protocol.md` hops
   that looked peer-to-peer (#5→#4, #4→#2) collapse onto the Pi, since JES and the
   CICS router are Pi processes. This is a 5-node **star**, not a mesh.
 
@@ -377,7 +377,7 @@ entirely. Revisit if the terminal itself ever needs concurrent in-flight txns.
 
 ### Consequences (these constrain later sections)
 1. **Timeout re-derivation (open).** Request/response needs a timeout. The retired
-   `message_protocol.md` used **500 ms**, but that predates the Pi doing a real
+   `RETIRED-message_protocol.md` used **500 ms**, but that predates the Pi doing a real
    SQLite WAL commit, which can exceed the old MCU-to-MCU hop. The value must be
    **re-derived**, best alongside §6's heartbeat timing — flagged there, not fixed
    here.
@@ -469,8 +469,8 @@ proposed, not yet created. When the measurement happens, log the result in
 
 ## §7 Message-type mapping — **DECIDED (2026-06-28)**
 
-Maps the carried-over `message_protocol.md` types onto the §4 ID scheme and ISO-TP
-payloads, and defines each payload's byte layout. Because `message_protocol.md`
+Maps the carried-over `RETIRED-message_protocol.md` types onto the §4 ID scheme and ISO-TP
+payloads, and defines each payload's byte layout. Because `RETIRED-message_protocol.md`
 describes the **retired peer-to-peer I2C architecture**, this is partly
 *re-derivation, not a 1:1 mapping*: several legacy hops collapse onto the Pi (which
 mediates all traffic — ADR-0001), the four `DB_*` types drop entirely, and the
@@ -852,5 +852,5 @@ old version ignore the new frame gracefully if they check the version.
 - **ADR-0001** — architecture (Pi core, C3 channels, shared CAN bus)
 - **system-design** — §3 topology, §5 data model/WAL, §6 testability, §8 open decisions, §9 doc set
 - **BOM** — parts + verified per-node pin budget
-- **message_protocol.md** — carried-over message semantics to re-map
+- **RETIRED-message_protocol.md** — carried-over message semantics to re-map
 - **ISO 15765-2** (ISO-TP); `espressif/esp_isotp`; `python-can-isotp`
