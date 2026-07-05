@@ -11,7 +11,9 @@
 >
 > Measurements go into `learning-log.md` once taken (protocol-spec §6 consequence).
 >
-> Status: **DRAFT — awaiting hardware arrival (~end of week 2026-06-28).**
+> Status: **IN PROGRESS — hardware arrived 2026-07-01.** §2, §3, §4 partially
+> verified from inspection (see PASS/DECIDED rows). Powered checks and §5, §7
+> pending firmware.
 
 ---
 
@@ -35,9 +37,10 @@
 
 | # | Check | Expected | Result | Notes |
 |---|---|---|---|---|
-| 2.1 | Chip marking on each transceiver reads **SN65HVD230** or **VP230** — not TJA1050 or MCP2551 | SN65HVD230 or VP230 | | |
-| 2.2 | Board supply voltage spec reads **3.3 V** (label or datasheet) | "DC 3V–3.6V" or equivalent | | |
-| 2.3 | Onboard 120 Ω termination resistor is **removable** (solder bridge, jumper, or physically absent) on each middle-node transceiver | Removable on nodes #1, #2, #4, #5 (middle nodes) | | |
+| 2.1 | Chip marking on each transceiver reads **SN65HVD230** or **VP230** — not TJA1050 or MCP2551 | SN65HVD230 or VP230 | **PASS** | Marking reads **VP230** (photo 2026-07-01) |
+| 2.2 | Board supply voltage spec reads **3.3 V** (label or datasheet) | "DC 3V–3.6V" or equivalent | **PASS** | Board silk reads **3.3V** |
+| 2.3 | Onboard 120 Ω termination resistor is **removable** on each middle-node transceiver | Removable on middle nodes | **FAIL** | 120R is a fixed SMD resistor (marked `121`), no solder-jumper bypass — not removable without desoldering. **Mitigated by 2.5 (bitrate decision) — desoldering deferred.** |
+| 2.5 | **Termination strategy — DECIDED.** Pi at one bus end (HAT 120R jumper IN); one external 120 Ω at the far-end MCU. The three middle-node VP230s keep their fixed 120R for now. Net bus impedance is therefore lower than the ideal 60 Ω, so **bring-up runs at 125 kbit/s** (lower speed tolerates the impedance mismatch). Desoldering the middle 120Rs + stepping to 500 kbit/s is a stretch goal once the bus is proven stable — see §3.5. | Documented | **DECIDED** | Reversible; avoids SMD rework at bring-up |
 | 2.4 | After powering one node: CANH–CANL **differential voltage** at idle is ~2.5 V (recessive) measured on the logic analyzer or multimeter | ~2.5 V differential at idle | | |
 
 ---
@@ -48,11 +51,11 @@
 
 | # | Check | Expected | Result | Notes |
 |---|---|---|---|---|
-| 3.1 | Read the **crystal value** from the silver oval on the HAT | Either `12.000` (→ overlay `oscillator=12000000`) or `8.000` (→ `8000000`) | | Actual value: _______ MHz |
-| 3.2 | `/boot/config.txt` (or `/boot/firmware/config.txt`) overlay entry matches the crystal value read in 3.1 | `dtparam=oscillator=<value>` | | |
+| 3.1 | Read the **crystal value** from the silver oval on the HAT | Either `12.000` (→ overlay `oscillator=12000000`) or `8.000` (→ `8000000`) | **PASS** | Crystal reads **EAS12.000** → **12 MHz** → overlay `oscillator=12000000` (photo 2026-07-01) |
+| 3.2 | `/boot/config.txt` (or `/boot/firmware/config.txt`) overlay entry matches the crystal value read in 3.1 | `dtparam=oscillator=12000000` | | |
 | 3.3 | `dmesg | grep mcp251` shows the MCP2515 initialised without error after boot | `mcp251x spi0.0: MCP2515 successfully initialized` (or equivalent) | | |
 | 3.4 | `ip link show can0` reports interface present | `can0` listed | | |
-| 3.5 | Bring `can0` up at 500 kbit/s: `sudo ip link set can0 up type can bitrate 500000` — no error | Command exits 0 | | |
+| 3.5 | Bring `can0` up at **125 kbit/s** (bring-up speed — see 2.5): `sudo ip link set can0 up type can bitrate 125000` — no error | Command exits 0 | | Stretch goal: retry at `bitrate 500000` once bus proven stable + middle 120Rs removed |
 | 3.6 | `candump can0` starts and shows no spontaneous error frames at idle (bus connected, nodes unpowered) | No `ERRORFRAME` output | | |
 
 ---
@@ -63,8 +66,8 @@
 
 | # | Check | Expected | Result | Notes |
 |---|---|---|---|---|
-| 4.1 | Note the PCF8574 variant purchased: **PCF8574** (addr range 0x20–0x27) or **PCF8574A** (0x38–0x3F) | Record variant | | Variant: _______ |
-| 4.2 | SSD1306 OLED I²C address on #2 (typically 0x3C or 0x3D) does **not** collide with the PCF8574 address | No address clash | | OLED addr: _______ PCF addr: _______ |
+| 4.1 | Note the PCF8574 variant purchased: **PCF8574** (addr range 0x20–0x27) or **PCF8574A** (0x38–0x3F) | Record variant | **PASS** | Chip marking reads **PCF8574T** → addr range **0x20–0x27** (photo 2026-07-01) |
+| 4.2 | SSD1306 OLED I²C address on #2 (typically 0x3C or 0x3D) does **not** collide with the PCF8574 address | No address clash | **PASS** | OLED 0x3C/0x3D vs PCF 0x20–0x27 — no possible clash |
 | 4.3 | I²C scan on MCU #2 (`i2c_master_probe` or equivalent) finds **both** the OLED and the PCF8574 | Two devices found | | |
 
 ---
