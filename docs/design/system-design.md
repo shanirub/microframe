@@ -140,21 +140,21 @@ processor; Docker-per-subsystem isolation; RFID "card" on #4.
 
 ---
 
-## 8. Open design decisions (resolve next, in the protocol spec)
+## 8. Open design decisions — RESOLVED (see protocol-spec §1–§7, now locked)
 
-These are deliberately **not** frozen yet; each deserves an options-with-reasoning
-pass:
+These were resolved in the protocol spec; kept here with their outcomes for
+traceability. Timeouts remain provisional until measured at bring-up.
 
-- **CAN ID scheme.** 11-bit vs 29-bit identifiers, and how to encode
-  message-type + source + destination into the ID (CAN arbitration uses the ID,
-  so it also sets priority).
-- **Segmentation / encoding.** A CAN frame holds 8 data bytes; a transaction
-  message does not fit. Options: ISO-TP (ISO 15765-2, standard multi-frame
-  transport, libraries on both sides) vs a compact binary format designed to fit
-  in one or two frames. This is the first decision.
-- **Interaction model.** Request/response (terminal waits for an ack) vs
-  fire-and-forget with correlation by UUID.
-- **Heartbeat cadence and timeout** for the per-node liveness check.
+- **CAN ID scheme.** Resolved — 11-bit identifiers used as channel labels +
+  arbitration priority; class in the high bits (protocol-spec §4).
+- **Segmentation / encoding.** Resolved — **ISO-TP** (ISO 15765-2) for multi-frame
+  messages; raw single frames for HEARTBEAT/ERROR (protocol-spec §5, §7).
+  Compact-binary was rejected (charter non-goal: byte optimisation out of scope).
+- **Interaction model.** Resolved — request/response with UUID correlation on the
+  transaction path; TXN_RESULT carries the outcome (protocol-spec §7).
+- **Heartbeat cadence and timeout.** Scheme resolved (per-node ping, class 0);
+  **values still provisional** (1 s / 3 s) — measure at bring-up
+  (bring-up-checklist §7, learning-log).
 
 ---
 
@@ -163,9 +163,12 @@ pass:
 | Document | Purpose | Status |
 |----------|---------|--------|
 | ADRs (`ADR-0001…`) | Record *why* each significant decision was made | ADR-0001 done |
-| System Design (this doc) | High-level *what* and *how* | Draft |
-| BOM | Exact parts, per-node allocation, verify notes | Draft |
-| Protocol / interface spec | The CAN message contract (IDs, framing, types) | Pending §8 |
-| Requirements | What the system must do, acceptance criteria | To carry forward |
+| System Design (this doc) | High-level *what* and *how* | Living |
+| BOM | Exact parts, per-node allocation, verify notes | Living; hardware verified 2026-07-01 |
+| Protocol / interface spec | The CAN message contract (IDs, framing, types) | §1–§7 locked |
+| Requirements / DoD | What the system must do, acceptance criteria | Done (Phase 1) |
+| Roadmap | Milestones + dependency-ordered tasks derived from the DoD | Done (Phase 1) |
+| Bring-up checklist | Pre-firmware hardware + toolchain verification | In progress (hardware arrived) |
+| Charter | Purpose, goals & learning objectives | Ratified |
 | Per-node README / build notes | Setup, pin map, build, definition-of-done | As each node is built |
 | Test plan | Functional + load/throughput methodology | With Phase 2 |

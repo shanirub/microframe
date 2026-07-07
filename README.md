@@ -36,23 +36,36 @@ Full parts list, per-node pin allocation, and verify-before-buy notes: [`docs/de
 
 ```
 .
-├── code/                        # Firmware (MCUs) and Pi-side processes
+├── CLAUDE.md                    # Agent guidance (project-wide rules)
+├── code/
+│   └── pi/                      # Raspberry Pi subsystems (Python package)
+│       ├── CLAUDE.md            #   Pi-specific agent guidance
+│       ├── pyproject.toml
+│       ├── src/mainframe_pi/    #   router, processor, jes, liveness, storage, protocol
+│       └── tests/
 └── docs/
     ├── decisions/               # ADRs — immutable "why" records
     │   └── ADR-0001-mainframe-core-architecture.md
     ├── design/                  # Living "what and how" documents
     │   ├── system-design.md
-    │   ├── protocol-spec.md
+    │   ├── protocol-spec.md     #   §1–§7 locked
     │   ├── BOM.md
     │   ├── requirements.md
-    │   └── bring-up-checklist.md
-    └── learning notes/          # Goals, vocabulary, and lessons
-        ├── charter.md
-        ├── glossary.md
-        ├── glossary-planning.md
-        ├── learning-log.md
-        └── planning-process.md
+    │   ├── roadmap.md
+    │   ├── bring-up-checklist.md
+    │   └── RETIRED-message_protocol.md   # retired shared-bus spec (traceability only)
+    ├── learning notes/          # Goals, vocabulary, and lessons
+    │   ├── charter.md
+    │   ├── glossary.md
+    │   ├── glossary-planning.md
+    │   ├── learning-log.md
+    │   └── planning-process.md
+    └── reference/               # External standards / datasheets (e.g. TI CAN intro)
 ```
+
+> Note: `charter.md` and `learning-log.md` currently live under `docs/learning
+> notes/` in the repo; the charter is the ratified home for goals and learning
+> objectives.
 
 ---
 
@@ -81,6 +94,8 @@ Living documents. Expected to evolve as decisions resolve and hardware is brough
 **[`BOM.md`](docs/design/BOM.md)** — Bill of Materials. Hardware in hand, hardware to order, per-node GPIO pin allocation (including why the Transaction Terminal requires a PCF8574 I²C GPIO expander for the 4×4 keypad), and a verify-before-buy checklist for parts where a wrong variant would cause a silent failure (transceiver voltage rating, HAT crystal value, expander I²C address).
 
 **[`requirements.md`](docs/design/requirements.md)** — What the system must do and when it is done, written as testable acceptance criteria. Three levels: per-node bring-up DoD (Definition of Done — the observable gate that must pass before functional testing), per-feature DoD (heartbeat, transaction path, journal, job path, durability), and system DoD (full end-to-end flow). Also contains the Phase 2+ deferred items so nothing is silently dropped.
+
+**[`roadmap.md`](docs/design/roadmap.md)** — The build plan derived from the DoD: seven milestones (M0–M6) plus a parallel Pi-software track, with dependency-ordered tasks under each. Every task carries acceptance criteria cross-referenced to `requirements.md`, a rough estimate, and a risk flag. Opens with a Mermaid task-dependency graph and names the critical path.
 
 **[`bring-up-checklist.md`](docs/design/bring-up-checklist.md)** — Pre-firmware hardware and toolchain verification. A pre-condition gate to complete before any firmware is written or flashed. Covers: CAN bus wiring and termination, transceiver verification, Pi HAT crystal and SocketCAN setup, PCF8574 I²C address check, ESP-IDF version and `esp_isotp` component verification, bench power and safety, and a timeout measurement section (to be filled in at bring-up and used to replace the provisional values in `protocol-spec.md` §6).
 

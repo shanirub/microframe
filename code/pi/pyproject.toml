@@ -1,0 +1,52 @@
+[project]
+name = "mainframe-pi"
+version = "0.1.0"
+description = "Raspberry Pi central-complex subsystems for the Mainframe Simulation (Phase 1)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Pinned per the ISO-TP verification (bring-up-checklist §5, 2026-07-01):
+# - can-isotp v2.x is NOT backward compatible with v1.x (isotp.Address API change),
+#   so pin >=2.0.7 and use NotifierBasedCanStack to avoid RX-queue starvation of
+#   the liveness reader sharing can0.
+dependencies = [
+    "python-can>=4.3",
+    "can-isotp>=2.0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+# Console entry points — one per subsystem process (ADR-0001: separate address
+# spaces). Each is a stub until its milestone (see roadmap M2/M3/M5).
+[project.scripts]
+mainframe-router = "mainframe_pi.router.__main__:main"
+mainframe-processor = "mainframe_pi.processor.__main__:main"
+mainframe-jes = "mainframe_pi.jes.__main__:main"
+mainframe-liveness = "mainframe_pi.liveness.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mainframe_pi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
