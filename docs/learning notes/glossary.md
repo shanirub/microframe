@@ -152,6 +152,28 @@ The Pi's JES process + MCU #4 (Job Submitter) are the analogue.
 
 **DASD** — mainframe durable disk storage. The Pi's local SQLite is the analogue.
 
+**MRO (Multi-Region Operation)** — CICS split across cooperating regions (separate
+address spaces) by role, so terminals, application logic, and files scale and fail
+independently. The Pi's separate router / processor / storage processes are the
+analogue (ADR-0001).
+
+**TOR (Terminal-Owning Region)** — the CICS region that owns the terminals and
+*function-ships* each request to whichever region can service it; results return
+*through* the TOR to the terminal. The Pi's **router** process is the analogue — the
+sole CAN gateway, inbound and outbound (ADR-0002).
+
+**AOR (Application-Owning Region)** — the CICS region that runs the application
+(business logic), reached by function shipping from the TOR; it never drives a
+terminal directly. The Pi's **transaction processor** is the analogue.
+
+**FOR (File-Owning Region)** — the CICS region that owns the data files/records;
+AORs reach data by function-shipping file requests to it. The Pi's **storage** module
+(SQLite, the DASD-analogue) is the analogue.
+
+**Function shipping** — CICS's mechanism for forwarding a request for a resource
+(terminal, file, program) owned by *another* region to that region, and returning the
+reply. The Pi's local IPC between router / processor / storage is the analogue.
+
 ## Storage & durability
 
 **SQLite WAL (Write-Ahead Log)** — a journaling mode letting a reader run
@@ -243,6 +265,12 @@ preserved across power cycles. The ESP32-C3 has no RTC — which is why the `HEA
 payload uses `uptime` (seconds since boot, self-contained) rather than a wall-clock
 timestamp `ts` (which would require a time-sync message from the Pi before the first
 heartbeat is meaningful).
+
+**Ingress / egress** — the direction of traffic across a boundary: **ingress** =
+frames arriving into the Pi from the CAN bus; **egress** = frames the Pi sends out
+onto the bus (generic networking terms; also called north–south traffic). In this
+project both directions funnel through the **router** process — it decodes and routes
+ingress, and is the *sole transmitter* of egress (ADR-0002).
 
 ## Error handling & observability (software patterns)
 
