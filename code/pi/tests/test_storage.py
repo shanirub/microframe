@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from mainframe_pi.storage import (
+    AccountNotFound,
     InsufficientFunds,
     Storage,
     TxnStatus,
@@ -72,6 +73,29 @@ def test_balance_is_read_only(tmp_path: Path) -> None:
                 txn_id="t1", account_id="acct-1", txn_type=TxnType.BALANCE,
                 amount=0, ts="2026-07-01T00:00:00",
             )
+
+
+def test_deposit_opens_unknown_account(tmp_path: Path) -> None:
+    """A DEPOSIT to an account that doesn't exist opens it (the opening deposit)."""
+    with _db(tmp_path) as s:
+        res = s.apply_transaction(
+            txn_id="t1", account_id="new-acct", txn_type=TxnType.DEPOSIT,
+            amount=5_000, ts="2026-07-10T00:00:00",
+        )
+        assert res.new_balance == 5_000
+        assert s.get_balance("new-acct") == 5_000
+
+
+def test_withdraw_unknown_account_raises_not_found(tmp_path: Path) -> None:
+    """Strict: WITHDRAW on an unknown account raises AccountNotFound and writes nothing."""
+    with _db(tmp_path) as s:
+        with pytest.raises(AccountNotFound):
+            s.apply_transaction(
+                txn_id="t1", account_id="ghost", txn_type=TxnType.WITHDRAW,
+                amount=100, ts="2026-07-10T00:00:00",
+            )
+        # no phantom account created, and no phantom transaction row left behind
+        assert s.get_balance("ghost") is None
 
 
 def test_committed_row_persists_across_reopen(tmp_path: Path) -> None:

@@ -58,6 +58,19 @@ class InsufficientFunds(Exception):
     """
 
 
+class AccountNotFound(Exception):
+    """A withdraw against an account that does not exist.
+
+    Like InsufficientFunds, this is a business *result*, not a system error: the
+    processor maps it to a FAILED TXN_RESULT with reason NOT_FOUND (protocol-spec
+    §7.4/§7.7) — never the ERROR channel. Strict-account decision (2026-07-10):
+    a DEPOSIT opens an unknown account (the opening deposit); WITHDRAW on an
+    unknown account is NOT_FOUND. The BALANCE case is signalled separately by
+    get_balance() returning None; this exception signals the WITHDRAW case from
+    inside the atomic write path.
+    """
+
+
 @dataclass(frozen=True)
 class TxnResult:
     txn_id: str
@@ -126,13 +139,19 @@ class Storage:
 
             current = self.get_balance(account_id)
             if current is None:
-                # Phase 1: unknown account is created on first touch with 0 balance.
-                # (Revisit if requirements later demand NOT_FOUND on deposit.)
-                cur.execute(
-                    "INSERT INTO accounts(account_id, balance) VALUES (?, 0)",
-                    (account_id,),
-                )
-                current = 0
+                # Strict-account decision (2026-07-10): only a DEPOSIT opens an
+                # unknown account (the opening deposit). A WITHDRAW on an unknown
+                # account is NOT_FOUND — signalled to the caller with nothing
+                # written (we raise before the PENDING insert, so ROLLBACK is a
+                # no-op). BALANCE never reaches here (get_balance handles it).
+                if txn_type is TxnType.DEPOSIT:
+                    cur.execute(
+                        "INSERT INTO accounts(account_id, balance) VALUES (?, 0)",
+                        (account_id,),
+                    )
+                    current = 0
+                else:  # WITHDRAW
+                    raise AccountNotFound(account_id)
 
             # 1) insert PENDING
             cur.execute(
