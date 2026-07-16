@@ -46,6 +46,32 @@ item. (→ BOM §3; the hardware→design feedback loop in planning-process.)
 
 ## Lessons (current project — newest first)
 
+### 2026-07-10 — A kernel-level guarantee can be proven on `vcan`, off the hardware
+**Context:** ADR-0003 (B1) needs two sockets on one interface to each receive every
+frame. Ran `verify_socketcan_fanout.py` on the Pi over a virtual `vcan0` — 10 frames
+sent, 10 received on *both* receivers. `vcan` is a valid stand-in because
+multi-socket delivery is a SocketCAN *kernel* property, independent of the MCP2515.
+The `uv run` build also confirmed `python-can` imports and opens sockets on the Pi —
+clearing the thread that gated T-P2 (router).
+**Lesson:** separate "is the semantic real" from "does the hardware work." The first
+is a kernel guarantee, testable today on `vcan` with zero wiring; the second
+(bitrate, transceiver, HAT) stays the M0 bench gate. Proving the cheap half early
+de-risks the design without waiting on hardware. (→ ADR-0003; bring-up-checklist §7.)
+
+### 2026-07-10 — A settled design choice can conceal an unmade architecture choice
+**Context:** the `NotifierBasedCanStack`-over-`CanStack` decision (settled
+2026-07-01) was a sound *design* choice, but it silently presumed that the liveness
+tracker and the ISO-TP stack share one address space — because a `can.Notifier` is
+an in-process object. That presumption collided with ADR-0001's one-process-each.
+It only surfaced when drawing the module dependency / communication diagrams, which
+forced the process-vs-library distinction into the open.
+**Lesson:** when a lower-level (design / library) decision quietly assumes a
+higher-level (architecture / topology) one, name and record the architecture
+decision explicitly rather than letting the design imply it. Here that meant a new
+ADR placing liveness in its own process (own read-only socket, kernel fan-out) and
+re-scoping the notifier note to *intra-router only*. (→ ADR-0003; router docstring;
+ADR-0001.)
+
 ### 2026-06-28 — The CAN ID is a channel label, not a message type; the payload byte is
 
 **Context:** completing §7 (D7.3, D7.6, D7.7) forced a concrete encounter with the
