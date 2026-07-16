@@ -121,6 +121,28 @@ The discipline that keeps storage form, message meaning, and wire form independe
 **CICS** — IBM's transaction-processing middleware: receives a request, routes it,
 touches storage, acknowledges. The Pi's "CICS router" process is the analogue.
 
+**MRO (Multi-Region Operation)** — CICS split across cooperating regions (separate
+address spaces) by role, so terminals, application logic, and files scale and fail
+independently. The Pi's separate router / processor / storage processes are the
+analogue (ADR-0001).
+
+**TOR (Terminal-Owning Region)** — the CICS region that owns the terminals and
+*function-ships* each request to whichever region can service it; results return
+*through* the TOR to the terminal, never straight from the AOR. The Pi's **router**
+process is the analogue — the sole CAN gateway, inbound and outbound (ADR-0002).
+
+**AOR (Application-Owning Region)** — the CICS region that runs the application
+(business logic), reached by function shipping from the TOR; it never drives a
+terminal directly. The Pi's **transaction processor** is the analogue.
+
+**FOR (File-Owning Region)** — the CICS region that owns the data files/records;
+AORs reach data by function-shipping file requests to it. The Pi's **storage**
+module (SQLite, the DASD-analogue) is the analogue.
+
+**Function shipping** — CICS's mechanism for forwarding a request for a resource
+(terminal, file, program) owned by *another* region to that region, and returning
+the reply. The Pi's local IPC between router / processor / storage is the analogue.
+
 **Task / task number** — CICS runs each request as a *task* with a compact,
 region-local **task number** for dispatch (recycled over time). The bus
 **correlation tag** is the analogue.
@@ -139,13 +161,36 @@ syncpoint is recorded on the log. The SQLite `COMMIT` is the analogue.
 "prepare" (all vote + log), then phase 2 "commit" (all harden). Needed only with >1
 store; the project has one (SQLite), so a plain commit suffices.
 
-**In-doubt** — the dangerous gap when a participant has voted to commit but hasn't
-heard the final decision; a crash here leaves the UOW unresolved until recovery. The
-project's PENDING-without-COMMITTED rows are the analogue.
+**In-doubt** — the dangerous gap when a participant has voted to commit but hasn't heard
+the final decision; a crash here leaves the UOW unresolved until recovery resolves it by
+UOWID. The project has **no in-doubt window**: one resource manager (SQLite) means its
+atomic `COMMIT` is the entire commit protocol. PENDING-without-COMMITTED rows would be
+the analogue *once* the write-ahead commits its intent separately (Phase 2+); today they
+cannot occur.
 
-**Recovery manager / backout** — on restart, walks the log, finds in-flight/in-doubt
-UOWs by UOWID, and resolves each (rolls back or completes). The boot-time replay of
-PENDING rows is the analogue.
+**Recovery manager / backout** — on restart, walks the log, finds in-flight/in-doubt UOWs
+by UOWID, and resolves each (rolls back or completes). The **planned** boot-time replay of
+PENDING rows is the analogue — Phase 2+, and blocked on the write-ahead committing its
+intent separately (see "Write-ahead pattern").
+
+**Resynchronization (resync)** — after a restart, a participant asks the coordinator
+what verdict a given **UOWID** received, and completes or backs out to match. The
+question is only askable because the UOWID is durable and stable — without a name for
+the unit of work, an in-doubt participant can only guess. The project has one resource
+manager (SQLite), so its atomic `COMMIT` *is* the whole 2PC and no in-doubt window
+exists; our UUID does request-dedup instead.
+
+**Idempotency key** — a caller-supplied identifier, stable across retries, that lets a
+receiver recognise a resend and return the stored result rather than applying the work
+twice. Distinct from a *transient* correlation id: it must be minted at (or before) the
+point of retransmission. In this project the **UUID** minted at ingress and bound to
+the tag (§2) is the analogue.
+
+**Session sequence numbers (SNA / LU6.2)** — the mainframe's other dedup mechanism: a
+conversation numbers its messages and the receiver **discards** anything at or below the
+high-water mark. Viable only because the session guarantees ordered delivery — where
+retries exist because a *reply* was lost (as here), the duplicate must be **replayed**
+from a stored result, not discarded, or the sender waits forever.
 
 **JES (Job Entry Subsystem)** — the mainframe job scheduler; ingests/dispatches jobs.
 The Pi's JES process + MCU #4 (Job Submitter) are the analogue.
@@ -180,12 +225,20 @@ reply. The Pi's local IPC between router / processor / storage is the analogue.
 concurrently with a writer. Local to the Pi; sole writer = the transaction
 processor.
 
-**Write-ahead pattern** — insert row PENDING → update balance → mark COMMITTED, in
-one atomic transaction. On reboot, PENDING-without-COMMITTED = an interrupted write
-to replay/flag. This is what makes a transaction survive a crash.
+**Write-ahead pattern** — insert row PENDING → update balance → mark COMMITTED, in one
+atomic transaction. The atomicity is what makes a *completed* transaction survive a
+reboot, and what makes a rejected withdrawal leave no trace. **Phase 1 caveat:** because
+all three steps share a single `COMMIT`, the PENDING row is never independently visible —
+a crash rolls it back too, so there is nothing to replay. The intent-log *shape* is
+present; the crash-replay *mechanism* (a separate commit for the intent, before the work)
+is Phase 2+. (→ learning-log 2026-07-16.)
 
 **Integer cents** — money is stored/sent as a `uint32` count of cents, never a float
 ($100.00 = 10000). Avoids floating-point rounding error.
+
+**`BEGIN IMMEDIATE`** — a SQLite transaction that acquires the write lock *up front*
+rather than lazily on first write. Makes lock contention fail fast and predictably
+instead of mid-transaction; the storage layer's single-writer discipline relies on it.
 
 ## Encoding & COBOL
 
@@ -247,6 +300,19 @@ Models a CICS task number.
 **Heartbeat / liveness** — a periodic ping confirming a node is alive; a missed
 window flags the node on the Operator Console. Sent as a raw single CAN frame, not
 ISO-TP.
+
+**Ingress / egress** — the direction of traffic across a boundary: **ingress** = frames
+arriving into the Pi from the CAN bus; **egress** = frames the Pi sends out onto the bus
+(generic networking terms; also called north–south traffic). Both directions funnel
+through the **router** process — it decodes and routes ingress, and is the *sole
+transmitter* of egress (ADR-0002). The liveness tracker's socket is receive-only.
+
+**Boot epoch** — a counter held in the MCU's **NVS** (non-volatile storage) and
+incremented once per power-up, used to qualify a per-node sequence number so that
+post-reboot keys cannot collide with pre-reboot ones. Costs one flash write per boot
+rather than one per transaction. Needed because a per-node counter's real enemy is
+**reboot, not rollover** — a `uint32` seq takes years to wrap but restarts at 0 the
+instant the node resets.
 
 **Request/response vs fire-and-forget** — whether the terminal blocks waiting for an
 ack, or sends and correlates the later result by tag. Transaction path (#2) =

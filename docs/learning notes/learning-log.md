@@ -46,6 +46,129 @@ item. (→ BOM §3; the hardware→design feedback loop in planning-process.)
 
 ## Lessons (current project — newest first)
 
+### 2026-07-16 — Dedup needs an identity that is stable across retries, and the spec already had one
+
+**Context:** designing the transaction processor (T-P3) raised "what happens if a
+`TXN_RESULT` is lost and the terminal resends?" I recommended minting the transaction
+UUID *inside the processor* and filed the resulting double-apply as a Phase-2
+deferral. Both were wrong, and reading **locked §2** afterwards showed why: §2 already
+specifies that *"the Pi mints the UUID on first receipt and stores the `tag ↔ UUID`
+binding in the log"* — i.e. mint at **ingress** (the router), with the binding as the
+durable link. `tag ≈ CICS task number` (compact, region-local, recycled);
+`UUID ≈ UOWID` (durable, globally unique, lives in the log).
+
+The survey of how this is really done, and why the tag alone cannot carry it:
+
+| mechanism | identity | dedup enforced by |
+|---|---|---|
+| **CICS session sequence numbers** (SNA/LU6.2) | `(session, seq)` — origin counter | high-water mark; **discard** the duplicate |
+| **CICS application idempotency table** | application key (often an origin UUID) | a **separate** `processed_requests` table; **replay** the stored reply |
+| **CICS UOWID / NETUOWID** | durable unit-of-work id | not request-dedup at all — **recovery**: resync an in-doubt UOW after a crash (diagram below) |
+| **Ours (§2, locked)** | `tag` at ingress → `UUID` in the log | the `tag ↔ UUID` binding — mint on *first* receipt, reuse on a repeat |
+
+Two traps the survey exposed. (1) The `uint16` tag is **transient by design** — §2 sizes
+its sequence field for ~256 in-flight per node, so it *recycles*; it correlates a reply
+to an in-flight request and can never be the durable key. That is exactly the
+task-number/UOWID split, not an oversight. (2) A per-node counter's real enemy is
+**reboot, not rollover**: a `uint32` seq at 10 txn/s takes ~13.6 years to wrap, but an
+MCU reset restarts it at 0 immediately and re-emits keys the Pi has already bound —
+so a *fresh* transaction gets swallowed as a duplicate. The cheap fix is an NVS **boot
+epoch** (one flash write per power cycle, not per transaction) making post-reboot keys
+unambiguously new. Note SNA can afford to *discard* duplicates because its session
+guarantees ordered delivery; we must **replay the stored result** instead, because our
+retries exist precisely when the result frame was lost — discarding would leave the
+terminal waiting forever.
+
+![CICS recovery identity — the in-doubt window](diagrams/cics-uowid-indoubt-resync.svg)
+
+**Lesson:** **the identity that dedups must be assigned at or before the point of
+retransmission** — mint it downstream and every retry mints a new one, so the "dedup
+key" cannot possibly detect a duplicate. Two corollaries. (1) *Two identities, two
+jobs*: a compact recycled tag for in-flight correlation, a durable unique id for the
+log — conflating them breaks one or the other, which is why CICS separates task number
+from UOWID and why §2 copies that split. (2) *Recovery dedup ≠ request dedup*: the
+UOWID exists so a crashed participant can ask "what happened to U?" and get a
+consistent answer — a question that is unaskable without a durable name. We have one
+resource manager (SQLite), so its atomic COMMIT *is* our 2PC and we get no in-doubt
+window; our UOWID-analogue does the simpler request-dedup job.
+**Process lesson:** I recommended processor-minting without reading §2 — the section
+that already decided it. "Verify, don't assume" is not only for FreeRTOS symbols and
+datasheets; **it applies to our own locked spec.** Read the section that owns the
+decision before proposing one. (→ protocol-spec §2 (locked); ADR-0002; glossary
+"Mainframe architecture"; `processor/__init__.py`.)
+
+---
+
+### 2026-07-16 — Every processor↔storage path, and the fault-vs-result line drawn in code
+
+**Context:** building T-P3 forced enumerating *every* interaction between the processor
+and storage, including the unhappy ones. Mapping them showed the §7.4
+result-vs-error rule is not an abstraction — it is a concrete branch in the code, and
+the paths split three ways, not two.
+
+![Processor to storage — all paths](diagrams/processor-storage-paths.svg)
+
+The three-way split: **success** returns a value; a **business "no"**
+(`InsufficientFunds`, `AccountNotFound`) is raised by storage *as a signal*, caught by
+the processor, and returned as a `FAILED` outcome with a reason code — it never reaches
+the ERROR channel; a **fault** (`ValueError` on a negative amount, or BALANCE sent down
+the write path) propagates *out of* `handle()` for the router to encode as an ERROR
+frame. Two asymmetries are deliberate and only became legible once drawn. (1) A DEPOSIT
+to a nonexistent account **succeeds** — it opens the account (the opening deposit) —
+while a WITHDRAW to the same nonexistent account is `FAILED · NOT_FOUND`. That is the
+strict-account decision, and before it the two disagreed: `get_balance()` signalled
+not-found via `None`, but `apply_transaction()` auto-created the account, so a WITHDRAW
+on an unknown account surfaced as INSUFFICIENT_FUNDS and left a phantom row —
+`reason=0x2` was unreachable. (2) `InsufficientFunds` is raised *after* the PENDING
+insert, and the ROLLBACK erases it — so a rejected withdrawal leaves no trace.
+
+**Lesson:** **an exception type is not the same axis as an error.** Storage uses
+`raise` for three different meanings — a business result to be converted, a fault to be
+escalated, and a programming error — and the processor's job is to sort them. Deciding
+which is which is an *application-layer* judgement (the end-to-end argument: only L7
+knows what "correct" means), so it cannot be delegated to storage or to the transport.
+Corollary for the integration: `handle()` deliberately raises on a malformed request,
+so **whatever runs the processor loop must catch it and emit an ERROR frame** — an
+uncaught fault takes the process down. Enumerating the unhappy paths *as a diagram*
+also surfaced the auto-create inconsistency that reading the code alone had not.
+(→ protocol-spec §7.4/§7.7; requirements §4.2; learning-log 2026-06-27;
+`processor/__init__.py`, `storage/__init__.py`.)
+
+---
+
+### 2026-07-16 — The write-ahead pattern is currently structural, not functional
+
+**Context:** asked a plain question — "do we commit PENDING first, then commit
+COMMITTED?" — and the code answers **no**: all three steps
+(insert PENDING → update balance → mark COMMITTED) run inside **one** `BEGIN IMMEDIATE`
+transaction with a **single** `COMMIT` at the end.
+
+![Write-ahead — one transaction, one commit](diagrams/write-ahead-commit-boundary.svg)
+
+That atomicity is exactly what makes a rejected withdrawal leave no trace. But it also
+means the PENDING row is **never independently committed**, so it is never observable:
+`status` can only ever be read as `COMMITTED`, and a crash mid-transaction rolls the
+PENDING row back along with everything else. **There is nothing left to replay.** The
+`storage` docstring scopes this honestly (Phase 1 = "a completed txn persists";
+mid-write replay is Phase 2+), so this is not a bug against its stated goal — but
+three *other* docs currently describe the mechanism as if it worked, and need
+correcting: glossary "Write-ahead pattern" ("On reboot, PENDING-without-COMMITTED = an
+interrupted write to replay/flag"), glossary "In-doubt" ("the project's
+PENDING-without-COMMITTED rows are the analogue"), and glossary "Recovery manager /
+backout" ("the boot-time replay of PENDING rows is the analogue"). Under the current
+implementation no such row can exist.
+
+**Lesson:** **a pattern's shape can be present while its mechanism is absent.** The
+write-ahead structure is there — states, ordering, naming — but the property it exists
+to deliver (a durable intent that survives a crash) requires the one thing the code
+does not do: commit the intent *separately*, before the work. Making it real needs two
+commits and buys crash replay at the cost of a genuinely visible intermediate state and
+a recovery path that must handle it. Worth writing down now precisely because it is
+obvious today and mystifying in six months — and because the docs already promise the
+behaviour, the gap is invisible from the docs alone. (→ system-design §5; glossary
+"Storage & durability", "Mainframe architecture"; README Phase 2+; `storage/__init__.py`.)
+
+
 ### 2026-07-10 — A kernel-level guarantee can be proven on `vcan`, off the hardware
 **Context:** ADR-0003 (B1) needs two sockets on one interface to each receive every
 frame. Ran `verify_socketcan_fanout.py` on the Pi over a virtual `vcan0` — 10 frames

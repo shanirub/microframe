@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 360" width="680" height="360" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>The write-ahead sequence sits inside one atomic transaction with a single commit</title>
+  <desc>Inside one BEGIN IMMEDIATE transaction the code inserts a PENDING row, updates the balance, and marks the row COMMITTED. A single COMMIT then makes all three visible at once; any failure rolls all three back. Because PENDING is never committed on its own, no PENDING row can survive a crash to be replayed.</desc>
+  <defs>
+    <marker id="ar3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="680" height="360" fill="#FFFFFF"/>
+
+  <text x="20" y="22" font-size="13" font-weight="600" fill="#1F1F1F">Write-ahead pattern as implemented — one transaction, one commit</text>
+
+  <rect x="230" y="38" width="220" height="32" rx="6" fill="#EEEEEE" stroke="#9E9E9E" stroke-width="1"/>
+  <text x="340" y="58" font-size="11" font-weight="600" fill="#1F1F1F" text-anchor="middle">BEGIN IMMEDIATE</text>
+  <line x1="340" y1="70" x2="340" y2="88" stroke="#5A5A5A" stroke-width="1" marker-end="url(#ar3)"/>
+
+  <rect x="60" y="90" width="560" height="164" rx="12" fill="#FAFAFA" stroke="#9E9E9E" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="76" y="108" font-size="10" fill="#5A5A5A">one atomic transaction — nothing visible to any reader yet</text>
+
+  <rect x="230" y="118" width="220" height="32" rx="6" fill="#EDE7F6" stroke="#7E57C2" stroke-width="1"/>
+  <text x="340" y="138" font-size="11" font-weight="600" fill="#1F1F1F" text-anchor="middle">1 · insert row PENDING</text>
+  <line x1="340" y1="150" x2="340" y2="166" stroke="#5A5A5A" stroke-width="1" marker-end="url(#ar3)"/>
+
+  <rect x="230" y="168" width="220" height="32" rx="6" fill="#EDE7F6" stroke="#7E57C2" stroke-width="1"/>
+  <text x="340" y="188" font-size="11" font-weight="600" fill="#1F1F1F" text-anchor="middle">2 · update balance</text>
+  <line x1="340" y1="200" x2="340" y2="216" stroke="#5A5A5A" stroke-width="1" marker-end="url(#ar3)"/>
+
+  <rect x="230" y="218" width="220" height="32" rx="6" fill="#EDE7F6" stroke="#7E57C2" stroke-width="1"/>
+  <text x="340" y="238" font-size="11" font-weight="600" fill="#1F1F1F" text-anchor="middle">3 · mark row COMMITTED</text>
+
+  <line x1="230" y1="184" x2="152" y2="184" stroke="#5A5A5A" stroke-width="1" marker-end="url(#ar3)"/>
+  <rect x="62" y="168" width="88" height="32" rx="6" fill="#FBE9E7" stroke="#A32D2D" stroke-width="1"/>
+  <text x="106" y="188" font-size="11" font-weight="600" fill="#1F1F1F" text-anchor="middle">ROLLBACK</text>
+  <text x="106" y="216" font-size="10" fill="#5A5A5A" text-anchor="middle">on any failure —</text>
+  <text x="106" y="228" font-size="10" fill="#5A5A5A" text-anchor="middle">all three undone</text>
+
+  <line x1="340" y1="254" x2="340" y2="272" stroke="#5A5A5A" stroke-width="1" marker-end="url(#ar3)"/>
+  <rect x="230" y="274" width="220" height="32" rx="6" fill="#E8F5E9" stroke="#3B6D11" stroke-width="1"/>
+  <text x="340" y="294" font-size="11" font-weight="600" fill="#1F1F1F" text-anchor="middle">COMMIT — all three land at once</text>
+
+  <text x="20" y="330" font-size="10" fill="#A32D2D">Consequence: PENDING is never committed on its own, so it is never observable — a crash rolls it back too.</text>
+  <text x="20" y="346" font-size="10" fill="#5A5A5A">The pattern's shape is present; its crash-replay mechanism is not. Making it functional needs two commits (intent, then completion).</text>
+</svg>
