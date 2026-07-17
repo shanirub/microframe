@@ -13,16 +13,15 @@ TxnOutcome, never propagated onto the ERROR channel. A genuinely malformed
 request (e.g. a negative amount) raises out of `handle()` for the caller to map
 to an ERROR frame — that is the §7.4 line between a business "no" and a fault.
 
-UUID minting (2026-07-10 decision): the txn_id is minted here, at apply time.
-Correct for Phase 1 (request/response, no dedup). If a lost result is retried,
-the resend would mint a new id and double-apply; the Phase-2 upgrade is to pin
-the id at ingress, keyed by the correlation tag. Recorded so it stays a
-conscious deferral, not an accident.
+UUID minting (§2, locked): the router mints the UUID on first receipt and binds
+it to the correlation tag in the log. This module never mints one — it receives
+`txn_id` already set on the request and uses it as-is. That binding is also the
+dedup mechanism (a retried send carries the same tag -> same txn_id), so no
+separate double-apply guard is needed here.
 """
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import IntEnum
@@ -55,13 +54,16 @@ class TxnRequest:
     """A decoded transaction request — the logical IPC message, not wire bytes.
 
     `tag` is the uint16 correlation tag, carried through untouched so the result
-    can echo it (the router matches result -> request by it). `amount_cents` is
-    ignored for BALANCE.
+    can echo it (the router matches result -> request by it). `txn_id` is the
+    durable UUID the router mints on first receipt (§2) and binds to `tag` in
+    the log — this module treats it as an opaque given, never mints its own.
+    `amount_cents` is ignored for BALANCE.
     """
 
     tag: int
     txn_type: TxnType
     account_id: str
+    txn_id: str
     amount_cents: int = 0
 
 
@@ -103,7 +105,7 @@ class Processor:
         # DEPOSIT / WITHDRAW — a durable write.
         try:
             self._storage.apply_transaction(
-                txn_id=str(uuid.uuid4()),
+                txn_id=req.txn_id,
                 account_id=req.account_id,
                 txn_type=req.txn_type,
                 amount=req.amount_cents,
